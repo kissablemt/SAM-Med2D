@@ -92,7 +92,7 @@ class MaskDecoder(nn.Module):
           torch.Tensor: batched predictions of mask quality
         """
 
-        masks, iou_pred = self.predict_masks(
+        masks, iou_pred, hs, src = self.predict_masks(
             image_embeddings=image_embeddings,
             image_pe=image_pe,
             sparse_prompt_embeddings=sparse_prompt_embeddings,
@@ -108,7 +108,7 @@ class MaskDecoder(nn.Module):
         iou_pred = iou_pred[:, mask_slice]
 
         # Prepare output
-        return masks, iou_pred
+        return masks, iou_pred, hs, src
 
     def predict_masks(
         self,
@@ -116,7 +116,7 @@ class MaskDecoder(nn.Module):
         image_pe: torch.Tensor,
         sparse_prompt_embeddings: torch.Tensor,
         dense_prompt_embeddings: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Predicts masks. See 'forward' for more details."""
         # Concatenate output tokens
 
@@ -132,13 +132,13 @@ class MaskDecoder(nn.Module):
         b, c, h, w = src.shape
 
         # Run the transformer
-        hs, src = self.transformer(src, pos_src, tokens)
+        hs, src_transformed = self.transformer(src, pos_src, tokens)
         iou_token_out = hs[:, 0, :]
         mask_tokens_out = hs[:, 1 : (1 + self.num_mask_tokens), :]
 
         # Upscale mask embeddings and predict masks using the mask tokens
-        src = src.transpose(1, 2).view(b, c, h, w)
-        upscaled_embedding = self.output_upscaling(src)
+        src_reshaped = src_transformed.transpose(1, 2).view(b, c, h, w)
+        upscaled_embedding = self.output_upscaling(src_reshaped)
         hyper_in_list: List[torch.Tensor] = []
         for i in range(self.num_mask_tokens):
             hyper_in_list.append(self.output_hypernetworks_mlps[i](mask_tokens_out[:, i, :]))
@@ -150,7 +150,8 @@ class MaskDecoder(nn.Module):
         # Generate mask quality predictions
         iou_pred = self.iou_prediction_head(iou_token_out)
 
-        return masks, iou_pred
+        # Return masks, iou_pred, hs, and src (before reshape)
+        return masks, iou_pred, hs, src_transformed
 
 
 # Lightly adapted from

@@ -80,13 +80,17 @@ def prompt_and_decoder(args, batched_input, model, image_embeddings, decoder_ite
             masks=batched_input.get("mask_inputs", None),
         )
 
-    low_res_masks, iou_predictions = model.mask_decoder(
+    result = model.mask_decoder(
         image_embeddings = image_embeddings,
         image_pe = model.prompt_encoder.get_dense_pe(),
         sparse_prompt_embeddings=sparse_embeddings,
         dense_prompt_embeddings=dense_embeddings,
         multimask_output=args.multimask,
     )
+    try:
+        low_res_masks, iou_predictions, _, _ = result
+    except ValueError:
+        low_res_masks, iou_predictions = result
   
     if args.multimask:
         max_values, max_indexs = torch.max(iou_predictions, dim=1)
